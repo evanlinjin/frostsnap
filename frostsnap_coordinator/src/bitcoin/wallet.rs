@@ -119,7 +119,12 @@ impl FrostsnapWallet {
                     .index
                     .insert_descriptor(keychain_id, descriptor)
                     .expect("two keychains must not have the same spks");
-                self.chain_client.monitor_keychain(keychain_id);
+                let next_index = self
+                    .tx_graph
+                    .index
+                    .last_revealed_index(keychain_id)
+                    .unwrap_or(0);
+                self.chain_client.monitor_keychain(keychain_id, next_index);
             }
             let all_txs = self
                 .tx_graph

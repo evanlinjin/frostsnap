@@ -77,7 +77,7 @@ pub type SyncResponse = spk_client::SyncResult<ConfirmationBlockTime>;
 /// The messages the client can send to the backend
 pub enum Message {
     ChangeUrlReq(ReqAndResponse<String, Result<()>>),
-    MonitorDescriptor(KeychainId, Descriptor<DescriptorPublicKey>),
+    MonitorDescriptor(KeychainId, Descriptor<DescriptorPublicKey>, u32),
     BroadcastReq(ReqAndResponse<Transaction, Result<()>>),
     SetStatusSink(Box<dyn Sink<ChainStatus>>),
     Reconnect,
@@ -101,14 +101,18 @@ impl ChainClient {
         response.recv()?
     }
 
-    pub fn monitor_keychain(&self, keychain: KeychainId) {
+    pub fn monitor_keychain(&self, keychain: KeychainId, last_active: u32) {
         let descriptor = descriptor_for_account_keychain(
             keychain,
             // this does not matter
             bitcoin::NetworkKind::Main,
         );
         self.req_sender
-            .send(Message::MonitorDescriptor(keychain, descriptor))
+            .send(Message::MonitorDescriptor(
+                keychain,
+                descriptor,
+                last_active,
+            ))
             .unwrap();
     }
 
@@ -270,9 +274,9 @@ impl ConnectionHandler {
                             Err(e) => response.send(Err(e)),
                         }
                     }
-                    Message::MonitorDescriptor(keychain, descriptor) => {
+                    Message::MonitorDescriptor(keychain, descriptor, last_active) => {
                         cmd_sender
-                            .insert_descriptor(keychain, descriptor, lookahead)
+                            .insert_descriptor(keychain, descriptor, last_active)
                             .expect("must insert descriptor");
                     }
                     Message::BroadcastReq(ReqAndResponse { request, response }) => {
