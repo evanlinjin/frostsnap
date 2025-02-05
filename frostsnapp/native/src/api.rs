@@ -1102,6 +1102,10 @@ pub struct SignedTx {
 }
 
 impl SignedTx {
+    pub fn txid(&self) -> SyncReturn<String> {
+        SyncReturn(self.signed_tx.compute_txid().to_string())
+    }
+
     pub fn effect(
         &self,
         master_appkey: MasterAppkey,
@@ -1112,6 +1116,10 @@ impl SignedTx {
 }
 
 impl UnsignedTx {
+    pub fn txid(&self) -> SyncReturn<String> {
+        SyncReturn(self.template_tx.txid().to_string())
+    }
+
     pub fn fee(&self) -> SyncReturn<Option<u64>> {
         SyncReturn(self.template_tx.fee())
     }
