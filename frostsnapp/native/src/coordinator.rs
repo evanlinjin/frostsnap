@@ -17,7 +17,7 @@ use frostsnap_coordinator::frostsnap_core::coordinator::{
 };
 use frostsnap_coordinator::frostsnap_core::device::KeyPurpose;
 use frostsnap_coordinator::frostsnap_core::{
-    self, message::DoKeyGen, Kind as _, RestorationId, SignSessionId,
+    self, message, Kind as _, RestorationId, SignSessionId,
 };
 use frostsnap_coordinator::frostsnap_core::{KeygenId, SymmetricKey};
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
@@ -384,7 +384,7 @@ impl FfiCoordinator {
             .map(|device| device.id)
             .collect();
 
-        let do_keygen = DoKeyGen::new(
+        let begin_keygen = message::keygen::Begin::new(
             devices,
             threshold,
             key_name,
@@ -396,7 +396,7 @@ impl FfiCoordinator {
             SinkWrap(sink),
             self.coordinator.lock().unwrap().MUTATE_NO_PERSIST(),
             currently_connected,
-            do_keygen,
+            begin_keygen,
             &mut rand::thread_rng(),
         );
 
@@ -662,7 +662,7 @@ impl FfiCoordinator {
         self.device_names.lock().unwrap().get(id)
     }
 
-    pub fn final_keygen_ack(&self, keygen_id: KeygenId) -> Result<AccessStructureRef> {
+    pub fn finalize_keygen(&self, keygen_id: KeygenId) -> Result<AccessStructureRef> {
         let mut coordinator = self.coordinator.lock().unwrap();
         let mut db = self.db.lock().unwrap();
 
@@ -674,21 +674,29 @@ impl FfiCoordinator {
             .downcast_mut::<frostsnap_coordinator::keygen::KeyGen>()
             .ok_or(anyhow!("somehow UI was not in KeyGen state"))?;
 
-        let accs_ref = coordinator.staged_mutate(&mut db, |coordinator| {
-            Ok(coordinator.final_keygen_ack(keygen_id, TEMP_KEY, &mut rand::thread_rng())?)
+        let finalized_keygen = coordinator.staged_mutate(&mut db, |coordinator| {
+            Ok(coordinator.finalize_keygen(keygen_id, TEMP_KEY, &mut rand::thread_rng())?)
         })?;
+        let access_structure_ref = finalized_keygen.access_structure_ref;
 
-        keygen.final_keygen_ack(accs_ref);
+        for msg in finalized_keygen
+            .into_iter()
+            .map(|msg| -> CoordinatorSendMessage { msg.try_into().expect("only device messages") })
+        {
+            self.usb_sender.send(msg);
+        }
+        keygen.keygen_finalized(access_structure_ref);
+
+        assert!(
+            Self::try_finish_protocol(self.usb_sender.clone(), &mut proto),
+            "keygen must be finished after we finalize"
+        );
 
         if let Some(stream) = &*self.key_event_stream.lock().unwrap() {
             stream.add(key_state(&coordinator));
         }
 
-        assert!(
-            Self::try_finish_protocol(self.usb_sender.clone(), &mut proto),
-            "keygen must be finished after we call final ack"
-        );
-        Ok(accs_ref)
+        Ok(access_structure_ref)
     }
 
     pub fn get_access_structure(&self, as_ref: AccessStructureRef) -> Option<CoordAccessStructure> {

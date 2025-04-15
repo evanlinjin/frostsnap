@@ -5,7 +5,7 @@
 
 #[macro_use]
 extern crate alloc;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use core::borrow::BorrowMut;
 use cst816s::{TouchGesture, CST816S};
 use display_interface_spi::SPIInterface;
@@ -316,6 +316,21 @@ where
                 self.display.ready_screen(new_name);
             }
             Workflow::WaitingFor(waiting_for) => match waiting_for {
+                WaitingFor::WaitingForKeyGenFinalize {
+                    key_name,
+                    t_of_n,
+                    session_hash,
+                } => {
+                    self.display.show_keygen_pending_finalize(
+                        &*key_name,
+                        *t_of_n,
+                        &format!(
+                            "{} {}",
+                            hex::encode(&session_hash.0[0..2]),
+                            hex::encode(&session_hash.0[2..4])
+                        ),
+                    );
+                }
                 WaitingFor::LookingForUpstream { jtag } => {
                     if *jtag {
                         self.display.print("Looking for coordinator USB host");

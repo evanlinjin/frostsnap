@@ -404,12 +404,15 @@ where
                         // core messages to figure out when we're going
                         // to be busy.
                         match &core_message {
-                            CoordinatorToDeviceMessage::DoKeyGen { .. } => {
-                                ui.set_busy_task(ui::BusyTask::KeyGen)
-                            }
-                            CoordinatorToDeviceMessage::FinishKeyGen { .. } => {
-                                ui.set_busy_task(ui::BusyTask::VerifyingShare)
-                            }
+                            CoordinatorToDeviceMessage::KeyGen(keygen_msg) => match keygen_msg {
+                                frostsnap_core::message::Keygen::Begin(_) => {
+                                    ui.set_busy_task(ui::BusyTask::KeyGen)
+                                }
+                                frostsnap_core::message::Keygen::Check { .. } => {
+                                    ui.set_busy_task(ui::BusyTask::VerifyingShare)
+                                }
+                                frostsnap_core::message::Keygen::Finalize { .. } => {}
+                            },
                             CoordinatorToDeviceMessage::OpenNonceStreams { .. } => {
                                 ui.set_busy_task(ui::BusyTask::GeneratingNonces);
                             }
@@ -477,6 +480,10 @@ where
                     }
                     DeviceSend::ToUser(boxed) => {
                         match *boxed {
+                            DeviceToUserMessage::FinalizeKeyGen => {
+                                ui.clear_busy_task();
+                                ui.clear_workflow();
+                            }
                             DeviceToUserMessage::CheckKeyGen { phase } => {
                                 ui.set_workflow(ui::Workflow::prompt(ui::Prompt::KeyGen { phase }));
                             }
@@ -544,11 +551,18 @@ where
 
                 match ui_event {
                     UiEvent::KeyGenConfirm { phase } => {
+                        let waiting_for = ui::WaitingFor::WaitingForKeyGenFinalize {
+                            key_name: phase.key_name().to_string(),
+                            t_of_n: phase.t_of_n(),
+                            session_hash: phase.session_hash(),
+                        };
                         outbox.extend(
                             signer
                                 .keygen_ack(*phase, &mut hmac_keys.share_encryption, &mut rng)
                                 .expect("state changed while confirming keygen"),
                         );
+                        // special case just because
+                        switch_workflow = Some(ui::Workflow::WaitingFor(waiting_for));
                     }
                     UiEvent::SigningConfirm { phase } => {
                         ui.set_busy_task(ui::BusyTask::Signing);
@@ -582,7 +596,7 @@ where
                         if let Some(upgrade) = upgrade.as_mut() {
                             upgrade.upgrade_confirm();
                         }
-                        // special case where updrade will handle things from now on
+                        // special case where upgrade will handle things from now on
                         switch_workflow = None;
                     }
                     UiEvent::EnteredShareBackup {

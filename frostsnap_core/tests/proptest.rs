@@ -13,7 +13,7 @@ use frostsnap_core::{
         CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
     },
     device::{DeviceToUserMessage, KeyGenPhase2, KeyPurpose, SignPhase1},
-    message::DoKeyGen,
+    message::keygen,
     AccessStructureRef, DeviceId, KeygenId, SignSessionId, WireSignTask,
 };
 use proptest_state_machine::{
@@ -83,19 +83,19 @@ impl RefSignSession {
 
 #[derive(Clone, Debug)]
 struct RefKeygen {
-    do_keygen: DoKeyGen,
+    do_keygen: keygen::Begin,
     devices_confirmed: BTreeSet<DeviceId>,
 }
 
 #[derive(Clone, Debug)]
 struct RefFinishedKey {
-    do_keygen: DoKeyGen,
+    do_keygen: keygen::Begin,
     deleted: bool,
 }
 
 #[derive(Clone, Debug)]
 enum Transition {
-    CStartKeygen(DoKeyGen),
+    CStartKeygen(keygen::Begin),
     DKeygenAck {
         device_id: DeviceId,
         keygen_id: KeygenId,
@@ -169,7 +169,7 @@ impl ReferenceStateMachine for RefState {
 
             let keygen_trans = (keygen_id, devices_and_threshold, name)
                 .prop_map(|(keygen_id, (devices, threshold), key_name)| {
-                    Transition::CStartKeygen(DoKeyGen::new_with_id(
+                    Transition::CStartKeygen(keygen::Begin::new_with_id(
                         devices,
                         threshold as u16,
                         key_name,
@@ -599,7 +599,7 @@ impl StateMachineTest for HappyPathTest {
         } = &mut state;
         match transition {
             Transition::CStartKeygen(do_keygen) => {
-                let do_keygen = run.coordinator.do_keygen(do_keygen, rng).unwrap();
+                let do_keygen = run.coordinator.begin_keygen(do_keygen, rng).unwrap();
                 run.extend(do_keygen);
             }
             Transition::DKeygenAck {
@@ -618,7 +618,7 @@ impl StateMachineTest for HappyPathTest {
                 if env.coordinator_keygen_acks.remove(&keygen_id) {
                     let as_ref = run
                         .coordinator
-                        .final_keygen_ack(keygen_id, TEST_ENCRYPTION_KEY, rng)
+                        .ack_keygen(keygen_id, TEST_ENCRYPTION_KEY, rng)
                         .unwrap();
                     finished_keygens.push(as_ref);
                 } else {

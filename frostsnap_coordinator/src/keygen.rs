@@ -4,7 +4,7 @@ use crate::{Completion, Sink, UiProtocol};
 use frostsnap_comms::CoordinatorSendMessage;
 use frostsnap_core::{
     coordinator::{CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, FrostCoordinator},
-    message::DoKeyGen,
+    message::keygen,
     AccessStructureRef, DeviceId, KeygenId, SessionHash,
 };
 use tracing::{error, event, Level};
@@ -21,15 +21,15 @@ impl KeyGen {
         keygen_sink: impl Sink<KeyGenState> + 'static,
         coordinator: &mut FrostCoordinator,
         currently_connected: BTreeSet<DeviceId>,
-        do_keygen: DoKeyGen,
+        begin_keygen: keygen::Begin,
         rng: &mut impl rand_core::RngCore,
     ) -> Self {
         let mut self_ = Self {
             sink: Box::new(keygen_sink),
             state: KeyGenState {
-                devices: do_keygen.device_to_share_index.keys().cloned().collect(),
-                threshold: do_keygen.threshold.into(),
-                keygen_id: do_keygen.keygen_id,
+                devices: begin_keygen.device_to_share_index.keys().cloned().collect(),
+                threshold: begin_keygen.threshold.into(),
+                keygen_id: begin_keygen.keygen_id,
                 ..Default::default()
             },
             keygen_messages: vec![],
@@ -37,12 +37,12 @@ impl KeyGen {
         };
 
         if !currently_connected
-            .is_superset(&do_keygen.device_to_share_index.keys().cloned().collect())
+            .is_superset(&begin_keygen.device_to_share_index.keys().cloned().collect())
         {
             self_.abort("A selected device was disconnected".into(), false);
         }
 
-        match coordinator.do_keygen(do_keygen, rng) {
+        match coordinator.begin_keygen(begin_keygen, rng) {
             Ok(messages) => {
                 for message in messages {
                     self_.keygen_messages.push(
@@ -68,7 +68,7 @@ impl KeyGen {
         self.emit_state();
     }
 
-    pub fn final_keygen_ack(&mut self, as_ref: AccessStructureRef) {
+    pub fn keygen_finalized(&mut self, as_ref: AccessStructureRef) {
         self.state.finished = Some(as_ref);
         self.emit_state()
     }
@@ -101,8 +101,14 @@ impl UiProtocol for KeyGen {
                     CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash } => {
                         self.state.session_hash = Some(session_hash);
                     }
-                    CoordinatorToUserKeyGenMessage::KeyGenAck { from, .. } => {
+                    CoordinatorToUserKeyGenMessage::KeyGenAck {
+                        from,
+                        all_acks_received,
+                    } => {
                         self.state.session_acks.push(from);
+                        if all_acks_received {
+                            self.state.all_acks = true;
+                        }
                     }
                 }
             } else {
@@ -115,10 +121,6 @@ impl UiProtocol for KeyGen {
     }
 
     fn poll(&mut self) -> Vec<CoordinatorSendMessage> {
-        if self.is_complete().is_some() {
-            return vec![];
-        }
-
         core::mem::take(&mut self.keygen_messages)
     }
 
@@ -154,7 +156,7 @@ pub struct KeyGenState {
     pub session_acks: Vec<DeviceId>,
     pub all_acks: bool,
     pub session_hash: Option<SessionHash>,
-    pub finished: Option<AccessStructureRef>,
     pub aborted: Option<String>,
+    pub finished: Option<AccessStructureRef>,
     pub keygen_id: KeygenId,
 }

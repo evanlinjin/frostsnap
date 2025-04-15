@@ -292,13 +292,21 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
             phase.restoration_id,
         )));
 
-        self.save_complete_share(
-            phase.complete_share,
-            symm_keygen,
+        let encrypted_secret_share = EncryptedSecretShare::encrypt(
+            phase.complete_share.secret_share,
+            phase.complete_share.access_structure_ref,
             phase.coord_contrib,
-            false,
+            symm_keygen,
             rng,
         );
+        self.save_complete_share(KeygenPendingFinalize {
+            key_name: phase.complete_share.key_name,
+            key_purpose: phase.complete_share.purpose,
+            access_structure_ref: phase.complete_share.access_structure_ref,
+            access_structure_kind: AccessStructureKind::Master,
+            access_structure_threshold: phase.complete_share.threshold,
+            encrypted_secret_share,
+        });
 
         vec![DeviceSend::ToCoordinator(Box::new(
             DeviceToCoordinatorMessage::Restoration(DeviceRestoration::ExitedRecoveryMode {

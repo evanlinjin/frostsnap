@@ -89,7 +89,7 @@ impl common::Env for TestEnv {
                         );
                         let access_structure_ref = run
                             .coordinator
-                            .final_keygen_ack(keygen_id, TEST_ENCRYPTION_KEY, rng)
+                            .ack_keygen(keygen_id, TEST_ENCRYPTION_KEY, rng)
                             .unwrap();
                         self.keygen_acks.insert(access_structure_ref.key_id);
                     }

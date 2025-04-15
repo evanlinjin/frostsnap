@@ -1153,8 +1153,8 @@ impl Coordinator {
         SyncReturn(self.0.get_device_name(id))
     }
 
-    pub fn final_keygen_ack(&self, keygen_id: KeygenId) -> Result<AccessStructureRef> {
-        self.0.final_keygen_ack(keygen_id)
+    pub fn finalize_keygen(&self, keygen_id: KeygenId) -> Result<AccessStructureRef> {
+        self.0.finalize_keygen(keygen_id)
     }
 
     pub fn request_device_sign(

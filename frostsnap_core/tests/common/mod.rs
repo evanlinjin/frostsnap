@@ -1,6 +1,6 @@
 use frostsnap_core::device::{DeviceSymmetricKeyGen, DeviceToUserMessage, KeyPurpose};
 use frostsnap_core::message::{
-    CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage, DoKeyGen,
+    keygen, CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage,
 };
 use frostsnap_core::{
     coordinator::{
@@ -101,7 +101,7 @@ pub trait Env {
                     },
             } => {
                 run.coordinator
-                    .final_keygen_ack(keygen_id, TEST_ENCRYPTION_KEY, rng);
+                    .ack_keygen(keygen_id, TEST_ENCRYPTION_KEY, rng);
             }
             _ => { /* nothing needs doing */ }
         }
@@ -215,8 +215,8 @@ impl Run {
         let mut run = Self::generate(n_devices, rng);
         let keygen_init = run
             .coordinator
-            .do_keygen(
-                DoKeyGen::new(
+            .begin_keygen(
+                keygen::Begin::new(
                     run.devices.keys().cloned().collect(),
                     threshold,
                     "my new key".to_string(),
