@@ -565,14 +565,13 @@ Future<AccessStructureRef?> showCheckKeyGenDialog({
           final devices = deviceIdSet(state.devices);
           final acks = deviceIdSet(state.sessionAcks);
           final gotShares = deviceIdSet(state.gotShares);
-          final gotAllShares = setEquals(gotShares, devices);
 
           final deviceList = DeviceListWithIcons(
             key: const Key("dialog-device-list"),
             iconAssigner: (context, id) {
               if (devices.contains(id)) {
                 final Widget icon;
-                if (!gotAllShares) {
+                if (!state.allShares) {
                   if (gotShares.contains(id)) {
                     icon = AnimatedCheckCircle();
                   } else {
@@ -670,7 +669,7 @@ Future<AccessStructureRef?> showCheckKeyGenDialog({
                       style: TextStyle(fontSize: 14),
                     ),
                     SizedBox(height: 10),
-                    ElevatedButton(
+                    FilledButton(
                       onPressed:
                           state.allAcks
                               ? () async {
