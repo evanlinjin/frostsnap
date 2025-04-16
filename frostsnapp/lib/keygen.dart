@@ -566,7 +566,6 @@ Future<AccessStructureRef?> showCheckKeyGenDialog({
           final acks = deviceIdSet(state.sessionAcks);
           final gotShares = deviceIdSet(state.gotShares);
           final gotAllShares = setEquals(gotShares, devices);
-          final finished = setEquals(acks, devices);
 
           final deviceList = DeviceListWithIcons(
             key: const Key("dialog-device-list"),
@@ -673,10 +672,10 @@ Future<AccessStructureRef?> showCheckKeyGenDialog({
                     SizedBox(height: 10),
                     ElevatedButton(
                       onPressed:
-                          finished
+                          state.allAcks
                               ? () async {
                                 final accessStructureRef = await coord
-                                    .finalKeygenAck(keygenId: state.keygenId);
+                                    .finalizeKeygen(keygenId: state.keygenId);
                                 if (context.mounted) {
                                   Navigator.pop(context, accessStructureRef);
                                 }
