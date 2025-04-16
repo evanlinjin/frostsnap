@@ -31,14 +31,7 @@ pub enum CoordinatorToUserSigningMessage {
 
 #[derive(Clone, Debug)]
 pub enum CoordinatorToUserKeyGenMessage {
-    ReceivedShares {
-        from: DeviceId,
-    },
-    CheckKeyGen {
-        session_hash: SessionHash,
-    },
-    KeyGenAck {
-        from: DeviceId,
-        all_acks_received: bool,
-    },
+    ReceivedShares { from: DeviceId },
+    CheckKeyGen { session_hash: SessionHash },
+    KeyGenAck { from: DeviceId },
 }

@@ -565,10 +565,7 @@ impl FrostCoordinator {
                             });
                         }
                         outgoing.push(CoordinatorSend::ToUser(CoordinatorToUserMessage::KeyGen {
-                            inner: CoordinatorToUserKeyGenMessage::KeyGenAck {
-                                from,
-                                all_acks_received,
-                            },
+                            inner: CoordinatorToUserKeyGenMessage::KeyGenAck { from },
                             keygen_id,
                         }));
                     }

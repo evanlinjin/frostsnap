@@ -97,16 +97,16 @@ impl UiProtocol for KeyGen {
                 match inner {
                     CoordinatorToUserKeyGenMessage::ReceivedShares { from } => {
                         self.state.got_shares.push(from);
+                        if self.state.got_shares.len() == self.state.devices.len() {
+                            self.state.all_shares = true;
+                        }
                     }
                     CoordinatorToUserKeyGenMessage::CheckKeyGen { session_hash } => {
                         self.state.session_hash = Some(session_hash);
                     }
-                    CoordinatorToUserKeyGenMessage::KeyGenAck {
-                        from,
-                        all_acks_received,
-                    } => {
+                    CoordinatorToUserKeyGenMessage::KeyGenAck { from } => {
                         self.state.session_acks.push(from);
-                        if all_acks_received {
+                        if self.state.session_acks.len() == self.state.devices.len() {
                             self.state.all_acks = true;
                         }
                     }
@@ -153,6 +153,7 @@ pub struct KeyGenState {
     pub threshold: usize,
     pub devices: Vec<DeviceId>, // not a set for frb compat
     pub got_shares: Vec<DeviceId>,
+    pub all_shares: bool,
     pub session_acks: Vec<DeviceId>,
     pub all_acks: bool,
     pub session_hash: Option<SessionHash>,
