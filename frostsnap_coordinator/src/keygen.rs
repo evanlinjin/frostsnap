@@ -157,7 +157,7 @@ pub struct KeyGenState {
     pub session_acks: Vec<DeviceId>,
     pub all_acks: bool,
     pub session_hash: Option<SessionHash>,
-    pub aborted: Option<String>,
     pub finished: Option<AccessStructureRef>,
+    pub aborted: Option<String>,
     pub keygen_id: KeygenId,
 }

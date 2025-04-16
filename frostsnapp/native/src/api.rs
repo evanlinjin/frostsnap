@@ -2151,6 +2151,7 @@ pub struct _KeyGenState {
     pub threshold: usize,
     pub devices: Vec<DeviceId>, // not a set for frb compat
     pub got_shares: Vec<DeviceId>,
+    pub all_shares: bool,
     pub session_acks: Vec<DeviceId>,
     pub all_acks: bool,
     pub session_hash: Option<SessionHash>,
