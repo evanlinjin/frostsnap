@@ -7,7 +7,7 @@ use bdk_chain::{
     indexer::keychain_txout::{self, KeychainTxOutIndex},
     local_chain,
     miniscript::{Descriptor, DescriptorPublicKey},
-    ChainPosition, CheckPoint, ConfirmationBlockTime, Indexer, Merge,
+    CanonicalizationParams, ChainPosition, CheckPoint, ConfirmationBlockTime, Indexer, Merge,
 };
 use frostsnap_core::{
     bitcoin_transaction::{self, LocalSpk},
@@ -81,6 +81,28 @@ impl CoordSuperWallet {
     /// Transaction cache for the chain client.
     pub fn tx_cache(&self) -> impl Iterator<Item = Arc<bitcoin::Transaction>> + '_ {
         self.tx_graph.graph().full_txs().map(|tx_node| tx_node.tx)
+    }
+
+    pub fn expected_spk_txids(&self) -> impl Iterator<Item = (ScriptBuf, Txid)> + '_ {
+        self.tx_graph.graph().full_txs().flat_map(move |tx| {
+            let from_inputs = tx
+                .input
+                .clone()
+                .into_iter()
+                .filter_map(|txin| {
+                    self.tx_graph
+                        .graph()
+                        .get_txout(txin.previous_output)
+                        .cloned()
+                })
+                .map(move |txout| (txout.script_pubkey.clone(), tx.txid));
+            let from_outputs = tx
+                .output
+                .clone()
+                .into_iter()
+                .map(move |txout| (txout.script_pubkey.clone(), tx.txid));
+            from_outputs.chain(from_inputs)
+        })
     }
 
     pub fn lookahead(&self) -> u32 {
@@ -302,7 +324,11 @@ impl CoordSuperWallet {
         let mut txs = self
             .tx_graph
             .graph()
-            .list_canonical_txs(self.chain.as_ref(), self.chain.tip().block_id())
+            .list_canonical_txs(
+                self.chain.as_ref(),
+                self.chain.tip().block_id(),
+                CanonicalizationParams::default(),
+            )
             .collect::<Vec<_>>();
 
         txs.sort_unstable_by_key(|tx| core::cmp::Reverse(tx.chain_position));
@@ -311,9 +337,9 @@ impl CoordSuperWallet {
                 let inner = canonical_tx.tx_node.tx.clone();
                 let txid = canonical_tx.tx_node.txid;
                 let confirmation_time = match canonical_tx.chain_position {
-                    ChainPosition::Confirmed(conf_time) => Some(ConfirmationTime {
-                        height: conf_time.block_id.height,
-                        time: conf_time.confirmation_time,
+                    ChainPosition::Confirmed { anchor, .. } => Some(ConfirmationTime {
+                        height: anchor.block_id.height,
+                        time: anchor.confirmation_time,
                     }),
                     _ => None,
                 };
@@ -343,7 +369,10 @@ impl CoordSuperWallet {
             .collect()
     }
 
-    pub fn apply_update(&mut self, update: bdk_electrum_c::Update<KeychainId>) -> Result<bool> {
+    pub fn apply_update(
+        &mut self,
+        update: bdk_electrum_streaming::Update<KeychainId>,
+    ) -> Result<bool> {
         let mut db = self.db.lock().unwrap();
         let changed = self
             .tx_graph
@@ -388,6 +417,7 @@ impl CoordSuperWallet {
             .filter_chain_unspents(
                 self.chain.as_ref(),
                 self.chain.tip().block_id(),
+                CanonicalizationParams::default(),
                 self.tx_graph
                     .index
                     .keychain_outpoints_in_range(Self::key_index_range(master_appkey)),
@@ -412,7 +442,7 @@ impl CoordSuperWallet {
         let target = Target {
             fee: TargetFee::from_feerate(FeeRate::from_sat_per_vb(feerate)),
             outputs: TargetOutputs::fund_outputs(vec![(
-                target_output.weight().to_wu() as u32,
+                target_output.weight().to_wu(),
                 target_output.value.to_sat(),
             )]),
         };
@@ -545,7 +575,7 @@ impl CoordSuperWallet {
                     script_pubkey: addr.script_pubkey(),
                     value: Amount::ZERO,
                 };
-                (txo.weight().to_wu() as u32, 0)
+                (txo.weight().to_wu(), 0)
             })),
         };
         let candidates = self
@@ -554,6 +584,7 @@ impl CoordSuperWallet {
             .filter_chain_unspents(
                 self.chain.as_ref(),
                 self.chain.tip().block_id(),
+                CanonicalizationParams::default(),
                 self.tx_graph
                     .index
                     .keychain_outpoints_in_range(Self::key_index_range(master_appkey)),

@@ -5,10 +5,10 @@ pub use bdk_chain::spk_client::SyncRequest;
 use bdk_chain::{
     bitcoin::{self, Transaction},
     miniscript::{Descriptor, DescriptorPublicKey},
-    spk_client::{self, FullScanResult},
+    spk_client::{self, FullScanResponse},
     ConfirmationBlockTime,
 };
-use bdk_electrum_c::Emitter;
+use bdk_electrum_streaming::Emitter;
 use frostsnap_core::MasterAppkey;
 use futures::{
     channel::{mpsc, oneshot},
@@ -75,7 +75,7 @@ pub const SUPPORTED_NETWORKS: [bitcoin::Network; 4] = {
     [Bitcoin, Signet, Testnet, Regtest]
 };
 
-pub type SyncResponse = spk_client::SyncResult<ConfirmationBlockTime>;
+pub type SyncResponse = spk_client::SyncResponse<ConfirmationBlockTime>;
 
 /// The messages the client can send to the backend
 pub enum Message {
@@ -162,11 +162,11 @@ pub struct ConnectionHandler {
 
 #[derive(Debug, Clone)]
 pub struct UpdateIter {
-    update_recv: Arc<futures::lock::Mutex<mpsc::UnboundedReceiver<FullScanResult<KeychainId>>>>,
+    update_recv: Arc<futures::lock::Mutex<mpsc::UnboundedReceiver<FullScanResponse<KeychainId>>>>,
 }
 
 impl Iterator for UpdateIter {
-    type Item = FullScanResult<KeychainId>;
+    type Item = FullScanResponse<KeychainId>;
 
     fn next(&mut self) -> Option<Self::Item> {
         block_on(async { self.update_recv.lock().await.next().await })
@@ -189,6 +189,7 @@ impl ConnectionHandler {
         let (mut emitter, cmd_sender, mut update_recv) =
             Emitter::<KeychainId>::new(super_wallet_.chain_tip(), lookahead);
         emitter.insert_txs(super_wallet_.tx_cache());
+        emitter.insert_expected_spk_txids(super_wallet_.expected_spk_txids());
         drop(super_wallet_);
         let target_server = Arc::new(std::sync::Mutex::new(TargetServer { url, conn: None }));
         let status_sink = Arc::new(std::sync::Mutex::<Box<dyn Sink<ChainStatus>>>::new(
@@ -306,7 +307,7 @@ impl ConnectionHandler {
                     Message::EstimateFee(ReqAndResponse { request, response }) => {
                         let cmd_sender = cmd_sender.clone();
                         std::thread::spawn(move || {
-                            use bdk_electrum_c::electrum_c::request::EstimateFee;
+                            use bdk_electrum_streaming::electrum_streaming_client::request::EstimateFee;
                             let mut futs = request
                                 .into_iter()
                                 .map(|number| {
