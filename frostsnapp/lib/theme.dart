@@ -48,7 +48,6 @@ Future<T?> showBottomSheetOrDialog<T>(
         TopBar(
           titleText: titleText,
           backgroundColor: backgroundColor,
-          isDialog: isDialog,
           scrollController: scrollController,
         ),
         Flexible(
@@ -139,20 +138,18 @@ WidgetSpan buildTag(BuildContext context, {required String text}) {
 }
 
 class TopBar extends StatefulWidget implements PreferredSizeWidget {
-  static const headerPadding = EdgeInsets.fromLTRB(20, 0, 20, 16);
+  static const headerPadding = EdgeInsets.fromLTRB(16, 16, 16, 12);
   static const animationDuration = Durations.short3;
 
   final String? titleText;
-  final bool isDialog;
   final Color? backgroundColor;
   final ScrollController? scrollController;
 
-  const TopBar({
+  TopBar({
     super.key,
     this.titleText,
     this.backgroundColor,
     this.scrollController,
-    this.isDialog = false,
   });
 
   @override
@@ -166,42 +163,28 @@ class _TopBarState extends State<TopBar> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final maybeDragHandle = SizedBox(
-      height: 20.0,
-      child: widget.isDialog
-          ? null
-          : Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.outline,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-    );
+    ;
     final headline = Padding(
       padding: TopBar.headerPadding,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        spacing: 16,
         children: [
+          IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: Icon(Icons.close),
+            iconSize: 24,
+            padding: EdgeInsets.zero,
+            style: IconButton.styleFrom(
+              backgroundColor: theme.colorScheme.surfaceContainerHighest,
+            ),
+          ),
           Expanded(
             child: Text(
               widget.titleText ?? '',
               style: theme.textTheme.titleLarge,
             ),
           ),
-          if (widget.isDialog)
-            IconButton(
-              onPressed: () => Navigator.pop(context),
-              icon: Icon(Icons.close),
-              iconSize: 24,
-              padding: EdgeInsets.zero,
-              style: IconButton.styleFrom(
-                backgroundColor: theme.colorScheme.surfaceContainerHighest,
-              ),
-            ),
         ],
       ),
     );
@@ -212,7 +195,6 @@ class _TopBarState extends State<TopBar> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          maybeDragHandle,
           headline,
           if (widget.scrollController != null)
             buildDivider(context, widget.scrollController!),
