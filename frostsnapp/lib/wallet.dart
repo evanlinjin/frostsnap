@@ -582,8 +582,8 @@ class WalletDrawer extends StatelessWidget {
         List<Widget> children = [
           Padding(
             padding: const EdgeInsets.symmetric(
-              horizontal: 10.0,
-              vertical: 5.0,
+              horizontal: 12.0,
+              vertical: 8.0,
             ),
             child: SvgPicture.asset(
               'assets/frostsnap-logo.svg',
