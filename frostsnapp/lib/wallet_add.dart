@@ -51,7 +51,7 @@ class WalletAddColumn extends StatelessWidget {
           emphasize: true,
           icon: Icon(Icons.add_rounded, size: iconSize),
           title: 'Create a new wallet',
-          subtitle: 'Set up a secure wallet with new Frostsnap devices',
+          subtitle: 'Set up a secure wallet with new Frostsnap devices.',
         ),
         Tooltip(
           triggerMode: TooltipTriggerMode.tap,
@@ -61,6 +61,8 @@ class WalletAddColumn extends StatelessWidget {
             context,
             showInfoIcon: true,
             text: 'Start wallet recovery',
+            subText:
+                'Select how you\'d like to provide the first key for the wallet.',
           ),
         ),
         buildCard(
@@ -70,16 +72,16 @@ class WalletAddColumn extends StatelessWidget {
             AssetImage('assets/icons/device2.png'),
             size: iconSize,
           ),
-          title: 'Existing key',
-          subtitle: 'Restore with a Frostsnap device',
+          title: 'Use existing device',
+          subtitle: 'Connect a Frostsnap device that already has a key.',
           groupPosition: VerticalButtonGroupPosition.top,
         ),
         buildCard(
           context,
           action: () => onPressed(AddType.recoverWalletWithBackup),
           icon: Icon(Icons.description_outlined, size: iconSize),
-          title: 'Physical backup',
-          subtitle: 'Restore with a recorded key backup',
+          title: 'Load from backup',
+          subtitle: 'Use a blank Frostsnap device with your physical backup.',
           groupPosition: VerticalButtonGroupPosition.bottom,
         ),
       ],
@@ -118,7 +120,9 @@ class WalletAddColumn extends StatelessWidget {
           ),
         ),
       ),
-      subtitle: subText == null ? null : Text(subText),
+      subtitle: subText == null
+          ? null
+          : Text(subText, style: TextStyle(color: theme.colorScheme.secondary)),
       trailing: trailing,
       subtitleTextStyle: theme.textTheme.labelSmall,
     );
