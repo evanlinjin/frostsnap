@@ -573,7 +573,7 @@ class WalletDrawer extends StatelessWidget {
   static const allShape = RoundedRectangleBorder(
     borderRadius: BorderRadius.all(outerRadius),
   );
-  static const tilePadding = EdgeInsets.symmetric(horizontal: 16, vertical: 6);
+  static const tilePadding = EdgeInsets.symmetric(horizontal: 16, vertical: 7);
 
   @override
   Widget build(BuildContext context) {
@@ -630,13 +630,13 @@ class WalletDrawer extends StatelessWidget {
             padding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              spacing: 2,
+              spacing: 4,
               children: [
                 Card.filled(
-                  color: theme.colorScheme.surfaceContainerLowest,
+                  color: theme.colorScheme.surfaceContainerLow,
                   margin: EdgeInsets.zero,
                   clipBehavior: Clip.hardEdge,
-                  shape: topShape,
+                  shape: allShape,
                   child: ListTile(
                     onTap: () async => await MaybeFullscreenDialog.show(
                       context: context,
@@ -659,10 +659,10 @@ class WalletDrawer extends StatelessWidget {
                   ),
                 ),
                 Card.filled(
-                  color: theme.colorScheme.surfaceContainerLowest,
+                  color: theme.colorScheme.surfaceContainerLow,
                   margin: EdgeInsets.zero,
                   clipBehavior: Clip.hardEdge,
-                  shape: bottomShape,
+                  shape: allShape,
                   child: ListTile(
                     onTap: () => Navigator.push(
                       context,
@@ -682,6 +682,8 @@ class WalletDrawer extends StatelessWidget {
         ]);
 
         final drawer = NavigationDrawer(
+          tilePadding: EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+          backgroundColor: theme.colorScheme.surface,
           onDestinationSelected: (index) {
             if (index < controller.wallets.length) {
               controller.selectedIndex = index;
@@ -694,14 +696,9 @@ class WalletDrawer extends StatelessWidget {
           children: children,
         );
 
-        final maybeContainedDrawer = isRounded
+        return isRounded
             ? drawer
-            : Container(
-                color: theme.colorScheme.surfaceContainerLow,
-                child: drawer,
-              );
-
-        return maybeContainedDrawer;
+            : Container(color: theme.colorScheme.surface, child: drawer);
       },
     );
   }
