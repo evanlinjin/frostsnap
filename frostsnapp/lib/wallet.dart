@@ -69,39 +69,22 @@ class WalletHome extends StatelessWidget {
     final theme = Theme.of(context);
     final column = ConstrainedBox(
       constraints: BoxConstraints(maxWidth: 460),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        spacing: 12,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12.0),
-            child: Image(
-              color: theme.colorScheme.outline,
-              height: 48,
-              alignment: Alignment.center,
-              image: AssetImage('assets/icons/frostsnap-icon-trimmed.png'),
-            ),
-          ),
-          WalletAddColumn(onPressed: makeOnPressed(context)),
-        ],
-      ),
+      child: WalletAddColumn(onPressed: makeOnPressed(context)),
     );
     return CustomScrollView(
       slivers: [
-        SliverAppBar(pinned: true, forceMaterialTransparency: true),
-        SliverFillRemaining(
-          hasScrollBody: true,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                  child: Center(child: column),
-                ),
-              );
-            },
+        SliverAppBar.large(
+          pinned: true,
+          forceMaterialTransparency: true,
+          title: Image(
+            color: theme.colorScheme.outline,
+            height: 48,
+            alignment: Alignment.center,
+            image: AssetImage('assets/icons/frostsnap-icon-trimmed.png'),
           ),
+        ),
+        SliverToBoxAdapter(
+          child: Align(alignment: AlignmentDirectional.topStart, child: column),
         ),
       ],
     );
@@ -112,7 +95,6 @@ class WalletHome extends StatelessWidget {
     final homeCtx = HomeContext.of(context)!;
     final walletListController = homeCtx.walletListController;
     final scaffoldKey = homeCtx.scaffoldKey;
-    final theme = Theme.of(context);
 
     final body = ListenableBuilder(
       listenable: walletListController,
@@ -171,16 +153,6 @@ class WalletHome extends StatelessWidget {
       bottomNavigationBar: bottomBar,
     );
 
-    final constrainedScaffold = Container(
-      color: theme.colorScheme.surface,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: 840),
-          child: scaffold,
-        ),
-      ),
-    );
-
     return Row(
       children: [
         AnimatedSize(
@@ -188,7 +160,7 @@ class WalletHome extends StatelessWidget {
           curve: Curves.easeInOutCubicEmphasized,
           child: isNarrowDisplay ? SizedBox(height: double.infinity) : drawer,
         ),
-        Flexible(child: constrainedScaffold),
+        Flexible(child: scaffold),
       ],
     );
   }
@@ -534,17 +506,35 @@ class WalletDrawer extends StatelessWidget {
   );
 
   Widget buildWalletDestination(BuildContext context, WalletItem item) {
+    final theme = Theme.of(context);
     return NavigationDrawerDestination(
       icon: item.icon ?? Icon(Icons.wallet_rounded),
-      label: Text.rich(
-        TextSpan(
-          text: item.name,
-          children: [
-            if (!(item.network?.isMainnet() ?? true))
-              buildTag(context, text: item.network?.name() ?? ''),
-          ],
+      label: SizedBox(
+        width: 228,
+        child: Padding(
+          padding: const EdgeInsets.only(right: 24),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  item.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (!(item.network?.isMainnet() ?? true))
+                (BuildContext context, {required String text}) {
+                  return Text(
+                    text,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  );
+                }(context, text: item.network?.name() ?? ''),
+            ],
+          ),
         ),
-        overflow: TextOverflow.fade,
       ),
     );
   }
@@ -627,70 +617,67 @@ class WalletDrawer extends StatelessWidget {
             ),
           ),
           Padding(
-            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              spacing: 4,
-              children: [
-                Card.filled(
-                  color: theme.colorScheme.surfaceContainerLow,
-                  margin: EdgeInsets.zero,
-                  clipBehavior: Clip.hardEdge,
-                  shape: allShape,
-                  child: ListTile(
-                    onTap: () async => await MaybeFullscreenDialog.show(
-                      context: context,
-                      barrierDismissible: true,
-                      child: homeCtx.wrap(DeviceListPage()),
-                    ),
-                    dense: true,
-                    contentPadding: tilePadding,
-                    leading: Icon(Icons.devices_rounded),
-                    trailing: StreamBuilder(
+            padding: const EdgeInsets.symmetric(horizontal: 28),
+            child: Divider(height: 32),
+          ),
+          NavigationDrawerDestination(
+            icon: Icon(Icons.devices_rounded),
+            label: SizedBox(
+              width: 228,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 24),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Connected Devices'),
+                    StreamBuilder(
                       stream: GlobalStreams.deviceListSubject,
                       builder: (context, snapshot) {
                         final n = snapshot.data?.state.devices.length;
-                        return n == null ? SizedBox.shrink() : Text('$n');
+                        return n == null
+                            ? SizedBox.shrink()
+                            : Text(
+                                '$n',
+
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              );
                       },
                     ),
-                    title: Text('Connected Devices'),
-                    textColor: theme.colorScheme.secondary,
-                    iconColor: theme.colorScheme.secondary,
-                  ),
+                  ],
                 ),
-                Card.filled(
-                  color: theme.colorScheme.surfaceContainerLow,
-                  margin: EdgeInsets.zero,
-                  clipBehavior: Clip.hardEdge,
-                  shape: allShape,
-                  child: ListTile(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => SettingsPage()),
-                    ),
-                    dense: true,
-                    contentPadding: tilePadding,
-                    leading: Icon(Icons.settings_rounded),
-                    title: Text('Settings'),
-                    textColor: theme.colorScheme.secondary,
-                    iconColor: theme.colorScheme.secondary,
-                  ),
-                ),
-              ],
+              ),
             ),
+          ),
+          NavigationDrawerDestination(
+            icon: Icon(Icons.settings_rounded),
+            label: Text('Settings'),
           ),
         ]);
 
         final drawer = NavigationDrawer(
-          tilePadding: EdgeInsets.symmetric(horizontal: 16, vertical: 2),
           backgroundColor: theme.colorScheme.surface,
-          onDestinationSelected: (index) {
-            if (index < controller.wallets.length) {
+          onDestinationSelected: (index) async {
+            final walletCount = controller.wallets.length;
+            if (index < walletCount) {
               controller.selectedIndex = index;
-            } else {
+              scaffoldKey.currentState?.closeDrawer();
+            } else if (index == walletCount) {
               controller.selectedIndex = null;
+              scaffoldKey.currentState?.closeDrawer();
+            } else if (index == walletCount + 1) {
+              await MaybeFullscreenDialog.show(
+                context: context,
+                barrierDismissible: true,
+                child: homeCtx.wrap(DeviceListPage()),
+              );
+            } else if (index == walletCount + 2) {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => SettingsPage()),
+              );
             }
-            scaffoldKey.currentState?.closeDrawer();
           },
           selectedIndex: controller.selectedIndex ?? controller.wallets.length,
           children: children,
