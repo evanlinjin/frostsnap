@@ -367,6 +367,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   late final StreamSubscription<TxState> txStateSub;
   StreamSubscription<DeviceListUpdate>? devicesSub;
   StreamSubscription<SigningState>? signingSub;
+  bool signingErrorHandled = false;
   SigningState? signingState;
   bool? broadcastDone;
   Set<DeviceId> connectedDevices = deviceIdSet([]);
@@ -498,6 +499,21 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     Navigator.pop(context);
   }
 
+  // Reached from the synchronous catch and from the stream's onError; whichever
+  // comes first wins so the same failure isn't shown twice.
+  void _onSigningError(Object error) {
+    if (signingErrorHandled) return;
+    signingErrorHandled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showErrorSnackbar(
+        context,
+        'Signing failed: ${displayExceptionMessage(error)}',
+      );
+      Navigator.popUntil(context, (r) => r.isFirst);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -540,11 +556,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
             // puts the failure onto the stream instead. Without this the error
             // is an unhandled zone error and the screen sits on a session that
             // never began.
-            onError: (error) {
-              if (!mounted) return;
-              showErrorSnackbar(context, error.toString());
-              Navigator.popUntil(context, (r) => r.isFirst);
-            },
+            onError: _onSigningError,
           );
           signingSub = sub;
         case SigningFinished():
@@ -554,10 +566,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           break;
       }
     } catch (e) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        showErrorSnackbar(context, e.toString());
-        Navigator.popUntil(context, (r) => r.isFirst);
-      });
+      _onSigningError(e);
     }
   }
 

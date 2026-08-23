@@ -25,19 +25,27 @@ pub struct SinkWrap<T>(pub StreamSink<T>);
 /// Dart port and clones for free, so the error path keeps one and the failure arrives where the
 /// screen is already listening.
 ///
-/// The error is encoded the way frb encodes one for an ordinary call, so Dart decodes it into the
-/// same `AnyhowException` it would have received had the `Result` reached it.
+/// Once the error is on the stream this returns `Ok(())`: the dropped `Result` would otherwise
+/// surface the same failure a second time as an unhandled zone error. Only a failure to deliver
+/// is returned.
 ///
 /// `T: Clone` is frb's, not ours: it derives `Clone` on a sink that holds `T` only in a
 /// `PhantomData`, and the derive asks for it anyway.
-pub fn report_start_failure<T: SseEncode + Clone, R>(
+pub fn report_start_failure<T: SseEncode + Clone>(
     sink: StreamSink<T>,
-    start: impl FnOnce(SinkWrap<T>) -> anyhow::Result<R>,
-) -> anyhow::Result<R> {
+    start: impl FnOnce(SinkWrap<T>) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
     let error_sink = sink.clone();
-    start(SinkWrap(sink)).inspect_err(|e| {
-        let _ = error_sink.add_error(format!("{e:?}"));
-    })
+    match start(SinkWrap(sink)) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            let message = error.to_string();
+            error_sink.add_error(error).map_err(|send_error| {
+                anyhow::anyhow!("failed to deliver stream start error ({send_error}): {message}")
+            })?;
+            Ok(())
+        }
+    }
 }
 
 macro_rules! bridge_sink {
