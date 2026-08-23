@@ -9,6 +9,7 @@ import 'package:frostsnap/psbt.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/sign_message.dart';
 import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/wallet_stranded_coins.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 class WalletMore extends StatefulWidget {
@@ -72,47 +73,95 @@ class _WalletMoreState extends State<WalletMore> {
     final isDeveloperMode =
         SettingsContext.of(context)?.settings.isInDeveloperMode() ?? false;
 
-    final signColumn = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        spacing: 2,
-        children: [
-          ListTile(
-            contentPadding: contentPadding,
-            tileColor: tileColor,
-            shape: isDeveloperMode ? tileShapeTop : tileShapeSingle,
-            title: Text('PSBT'),
-            subtitle: Text('Sign a partially signed bitcoin transaction'),
-            leading: Icon(Icons.edit_document),
-            onTap: () async {
-              await MaybeFullscreenDialog.show(
-                context: context,
-                child: walletCtx.wrap(LoadPsbtPage(wallet: walletCtx.wallet)),
-              );
-            },
+    final signColumn = StreamBuilder(
+      stream: walletCtx.txStream,
+      builder: (context, _) {
+        final utxos = walletCtx.superWallet.utxoCount(
+          masterAppkey: walletCtx.masterAppkey,
+        );
+        // One coin into one coin is a pure fee burn, so the action only exists past that.
+        final showConsolidate = utxos > 1;
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            spacing: 2,
+            children: [
+              ListTile(
+                contentPadding: contentPadding,
+                tileColor: tileColor,
+                shape: showConsolidate || isDeveloperMode
+                    ? tileShapeTop
+                    : tileShapeSingle,
+                title: Text('PSBT'),
+                subtitle: Text('Sign a partially signed bitcoin transaction'),
+                leading: Icon(Icons.edit_document),
+                onTap: () async {
+                  await MaybeFullscreenDialog.show(
+                    context: context,
+                    child: walletCtx.wrap(
+                      LoadPsbtPage(wallet: walletCtx.wallet),
+                    ),
+                  );
+                },
+              ),
+              if (showConsolidate)
+                ListTile(
+                  contentPadding: contentPadding,
+                  tileColor: tileColor,
+                  shape: isDeveloperMode ? tileShape : tileShapeEnd,
+                  title: Text('Consolidate ($utxos)'),
+                  subtitle: Text(
+                    'Merge all coins into one — this links them together on-chain',
+                  ),
+                  leading: Icon(Icons.merge_rounded),
+                  onTap: () => showBottomSheetOrDialog(
+                    context,
+                    title: Text('Consolidate'),
+                    builder: (context, scrollController) => walletCtx.wrap(
+                      ConsolidatePage(
+                        scrollController: scrollController,
+                        description:
+                            'Merges all of this wallet\'s coins into one. This '
+                            'links your coins together on-chain; everything '
+                            'returns to this wallet, minus the fee.',
+                        planner: (feerate) =>
+                            walletCtx.superWallet.planConsolidate(
+                              masterAppkey: walletCtx.masterAppkey,
+                              outpoints: walletCtx.superWallet
+                                  .allUnspentOutpoints(
+                                    masterAppkey: walletCtx.masterAppkey,
+                                    feerate: feerate,
+                                  ),
+                              feerate: feerate,
+                            ),
+                      ),
+                    ),
+                  ),
+                ),
+              if (isDeveloperMode)
+                ListTile(
+                  contentPadding: contentPadding,
+                  tileColor: tileColor,
+                  shape: tileShapeEnd,
+                  title: Text('Message'),
+                  subtitle: Text('Sign an arbitrary message'),
+                  leading: Icon(Icons.edit_note),
+                  onTap: frostKey == null
+                      ? null
+                      : () async {
+                          await MaybeFullscreenDialog.show(
+                            context: context,
+                            child: walletCtx.wrap(
+                              SignMessagePage(frostKey: frostKey),
+                            ),
+                          );
+                        },
+                ),
+            ],
           ),
-          if (isDeveloperMode)
-            ListTile(
-              contentPadding: contentPadding,
-              tileColor: tileColor,
-              shape: tileShapeEnd,
-              title: Text('Message'),
-              subtitle: Text('Sign an arbitrary message'),
-              leading: Icon(Icons.edit_note),
-              onTap: frostKey == null
-                  ? null
-                  : () async {
-                      await MaybeFullscreenDialog.show(
-                        context: context,
-                        child: walletCtx.wrap(
-                          SignMessagePage(frostKey: frostKey),
-                        ),
-                      );
-                    },
-            ),
-        ],
-      ),
+        );
+      },
     );
 
     final manageColumn = Padding(
@@ -212,7 +261,7 @@ class _WalletMoreState extends State<WalletMore> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        makeTitle(context, title: Text('Sign data')),
+        makeTitle(context, title: Text('Sign')),
         signColumn,
         makeTitle(context, title: Text('Manage wallet')),
         manageColumn,
