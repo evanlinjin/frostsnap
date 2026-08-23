@@ -65,6 +65,13 @@ pub(super) fn reconnect_needed(
     }
 }
 
+fn connection_error_message(err: &TofuError) -> String {
+    match err {
+        TofuError::Other(err) => format!("{err:#}"),
+        TofuError::NotTrusted(_) => err.to_string(),
+    }
+}
+
 /// State needed for message handling and connection attempts.
 pub(super) struct HandlerState {
     pub genesis_hash: BlockHash,
@@ -194,7 +201,11 @@ impl HandlerState {
                 Err(err) => {
                     // Stay in the Connecting phase across the failover to the next server; a
                     // total failure settles to Disconnected in `backoff`.
-                    tracing::error!(err = err.to_string(), url, "failed to connect",);
+                    tracing::error!(
+                        err = connection_error_message(&err),
+                        url,
+                        "failed to connect",
+                    );
                 }
             }
         }
@@ -240,9 +251,10 @@ impl HandlerState {
                         );
                         let _ = response.send(Ok(ConnectionResult::CertificatePromptNeeded(*cert)));
                     }
-                    Err(TofuError::Other(e)) => {
-                        tracing::error!("Failed to connect to {}: {}", request.url, e);
-                        let _ = response.send(Ok(ConnectionResult::Failed(e.to_string())));
+                    Err(err @ TofuError::Other(_)) => {
+                        let err = connection_error_message(&err);
+                        tracing::error!("Failed to connect to {}: {}", request.url, err);
+                        let _ = response.send(Ok(ConnectionResult::Failed(err)));
                     }
                 }
                 false
@@ -311,10 +323,40 @@ impl HandlerState {
 mod tests {
     use super::*;
     use crate::bitcoin::chain_sync::ElectrumConfig;
+    use crate::bitcoin::tofu::verifier::UntrustedCertificate;
     use bdk_chain::bitcoin::{consensus, constants::genesis_block, params::Params, Network};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
     use tokio::sync::watch;
+
+    #[test]
+    fn ordinary_connection_errors_include_their_cause_chain() {
+        let err =
+            anyhow::Error::msg("Connection refused").context("connecting to tcp://127.0.0.1:1");
+        let err = TofuError::Other(err);
+
+        assert_eq!(
+            connection_error_message(&err),
+            "connecting to tcp://127.0.0.1:1: Connection refused"
+        );
+    }
+
+    #[test]
+    fn trust_decision_errors_keep_their_specialized_message() {
+        let err = TofuError::NotTrusted(Box::new(UntrustedCertificate {
+            fingerprint: "00".into(),
+            server_url: "ssl://electrum.example:50002".into(),
+            is_changed: false,
+            old_fingerprint: None,
+            certificate_der: vec![],
+            valid_for_names: None,
+        }));
+
+        assert_eq!(
+            connection_error_message(&err),
+            "Untrusted certificate for ssl://electrum.example:50002"
+        );
+    }
 
     /// A started handler plus the config `watch` sender (kept alive so the receiver passed to
     /// `establish` doesn't see a closed channel) and a receiver to drive `establish` with.
