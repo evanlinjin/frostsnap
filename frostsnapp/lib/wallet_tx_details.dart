@@ -155,25 +155,15 @@ class SigningFinished extends TxSigningParams {
 class TxDetailsModel {
   /// The raw transaction.
   Transaction tx;
-  final int chainTipHeight;
   final DateTime now;
 
-  TxDetailsModel({
-    required this.tx,
-    required this.chainTipHeight,
-    required this.now,
-  });
+  TxDetailsModel({required this.tx, required this.now});
 
   update(Transaction tx) => this.tx = tx;
 
   int get netValue => tx.balanceDelta() ?? 0;
 
-  /// Number of blocks in our view of the best chain.
-  int get chainLength => chainTipHeight + 1;
-
-  /// Number of tx confirmations.
-  int get confirmations =>
-      chainLength - (tx.confirmationTime?.height ?? chainLength);
+  int get confirmations => tx.confirmations;
   bool get isConfirmed => confirmations > 0;
   bool get isSend => (tx.balanceDelta() ?? 0) < 0;
 

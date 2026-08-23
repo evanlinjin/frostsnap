@@ -386,6 +386,8 @@ impl CoordSuperWallet {
 
     pub fn list_transactions(&mut self, master_appkey: MasterAppkey) -> Vec<Transaction> {
         self.lazily_initialize_key(master_appkey);
+        let chain_tip = self.chain.tip();
+        let chain_tip_height = chain_tip.height();
         // bdk's canonical order is topological (spend-depth), not by time, so reverse it to
         // get child-before-parent, then sort newest-first by chain position (pending first,
         // then confirmed by height). Stable sort keeps the child-before-parent tiebreak.
@@ -394,7 +396,7 @@ impl CoordSuperWallet {
             .graph()
             .list_ordered_canonical_txs(
                 self.chain.as_ref(),
-                self.chain.tip().block_id(),
+                chain_tip.block_id(),
                 CanonicalizationParams::default(),
             )
             .collect::<Vec<_>>();
@@ -412,6 +414,9 @@ impl CoordSuperWallet {
                     }),
                     _ => None,
                 };
+                let confirmations = confirmation_time.as_ref().map_or(0, |confirmation| {
+                    confirmation.confirmations_at_tip(chain_tip_height)
+                });
                 let last_seen = canonical_tx.tx_node.last_seen;
                 let prevouts =
                     self.get_prevouts(inner.input.iter().map(|txin| txin.previous_output));
@@ -435,6 +440,7 @@ impl CoordSuperWallet {
                         inner,
                         txid,
                         confirmation_time,
+                        confirmations,
                         last_seen,
                         prevouts,
                         is_mine,
@@ -586,6 +592,8 @@ pub struct Transaction {
     pub txid: Txid,
 
     pub confirmation_time: Option<ConfirmationTime>,
+    /// Confirmations against the same chain snapshot that canonicalized this transaction.
+    pub confirmations: u32,
     pub last_seen: Option<u64>,
 
     pub prevouts: HashMap<OutPoint, TxOut>,
@@ -599,11 +607,31 @@ pub struct ConfirmationTime {
     pub time: u64,
 }
 
+impl ConfirmationTime {
+    fn confirmations_at_tip(&self, chain_tip_height: u32) -> u32 {
+        chain_tip_height
+            .checked_sub(self.height)
+            .map_or(0, |depth| depth + 1)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
     use bitcoin::key::{Secp256k1, TweakedPublicKey};
     use frostsnap_core::{schnorr_fun::fun::Point, tweak::AppTweak};
+
+    #[test]
+    fn confirmation_count_is_derived_from_the_wallet_snapshot_tip() {
+        let confirmation = ConfirmationTime {
+            height: 100,
+            time: 0,
+        };
+
+        assert_eq!(confirmation.confirmations_at_tip(100), 1);
+        assert_eq!(confirmation.confirmations_at_tip(105), 6);
+        assert_eq!(confirmation.confirmations_at_tip(99), 0);
+    }
 
     #[test]
     fn wallet_descriptors_match_our_tweaking() {

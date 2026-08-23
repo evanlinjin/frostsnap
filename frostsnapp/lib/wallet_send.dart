@@ -626,14 +626,9 @@ class _WalletSendPageState extends State<WalletSendPage> {
     final fsCtx = FrostsnapContext.of(context)!;
     final walletCtx = WalletContext.of(context)!;
     final access = walletCtx.wallet.frostKey()!.accessStructures()[0];
-    final chainTipHeight = walletCtx.wallet.superWallet.height();
     final now = DateTime.now();
 
-    final txDetails = TxDetailsModel(
-      tx: unsignedTx.details(),
-      chainTipHeight: chainTipHeight,
-      now: now,
-    );
+    final txDetails = TxDetailsModel(tx: unsignedTx.details(), now: now);
     nextPageOrPop(null);
     await showBottomSheetOrDialog(
       context,
