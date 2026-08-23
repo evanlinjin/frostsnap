@@ -581,7 +581,6 @@ class _ReceiverPageState extends State<ReceivePage> {
     final isFocused = focus == ReceivePageFocus.awaitTx;
     final theme = Theme.of(context);
     final now = DateTime.now();
-    final chainTipHeight = walletCtx.wallet.superWallet.height();
 
     final relevantTxs = allTxs.where((tx) {
       if (thisAddr == null || thisSpk == null) return false;
@@ -590,11 +589,7 @@ class _ReceiverPageState extends State<ReceivePage> {
       return (netSpent > 0 || netReceived > 0);
     }).toList();
     final txTiles = relevantTxs.map((tx) {
-      final txDetails = TxDetailsModel(
-        tx: tx,
-        chainTipHeight: chainTipHeight,
-        now: now,
-      );
+      final txDetails = TxDetailsModel(tx: tx, now: now);
       return TxSentOrReceivedTile(
         txDetails: txDetails,
         onTap: () => showBottomSheetOrDialog(

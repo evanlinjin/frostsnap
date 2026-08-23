@@ -389,7 +389,6 @@ class _TxListState extends State<TxList> {
             walletCtx.txStream.map((_) => {}),
           ]),
           builder: (context, _) {
-            final chainTipHeight = walletCtx.wallet.superWallet.height();
             final now = DateTime.now();
             final unbroadcastedTiles = coord
                 .unbroadcastedTxs(
@@ -399,7 +398,6 @@ class _TxListState extends State<TxList> {
                 .map((unbroadcastedTx) {
                   final txDetails = TxDetailsModel(
                     tx: unbroadcastedTx.tx,
-                    chainTipHeight: chainTipHeight,
                     now: now,
                   );
                   final session = unbroadcastedTx.activeSession;
@@ -477,15 +475,14 @@ class _TxListState extends State<TxList> {
                   child: Center(child: CircularProgressIndicator()),
                 );
               }
-              final transactions = snapshot.data?.txs ?? [];
-              final chainTipHeight = walletCtx.wallet.superWallet.height();
+              final txState = snapshot.data!;
+              final transactions = txState.txs;
               final now = DateTime.now();
               return SliverList.builder(
                 itemCount: transactions.length,
                 itemBuilder: (context, index) {
                   final txDetails = TxDetailsModel(
                     tx: transactions[index],
-                    chainTipHeight: chainTipHeight,
                     now: now,
                   );
                   return TxSentOrReceivedTile(
@@ -864,7 +861,6 @@ class WalletBottomBar extends StatelessWidget {
 
     final txDetails = TxDetailsModel(
       tx: unbroadcastedTx.tx,
-      chainTipHeight: walletCtx.wallet.superWallet.height(),
       now: DateTime.now(),
     );
     final session = unbroadcastedTx.activeSession;
@@ -958,7 +954,6 @@ class WalletBottomBar extends StatelessWidget {
                   final uncanonicalTx = unbroadcastedTxs[index];
                   final txDetails = TxDetailsModel(
                     tx: uncanonicalTx.tx,
-                    chainTipHeight: walletCtx.superWallet.height(),
                     now: DateTime.now(),
                   );
                   return TxSentOrReceivedTile(

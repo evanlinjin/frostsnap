@@ -9,6 +9,7 @@ use frostsnap_coordinator::bitcoin::chain_sync::{
     default_backup_electrum_server, default_electrum_server, SUPPORTED_NETWORKS,
 };
 pub use frostsnap_coordinator::bitcoin::wallet::ConfirmationTime;
+use frostsnap_coordinator::bitcoin::wallet::Transaction as WalletTransaction;
 pub use frostsnap_coordinator::frostsnap_core::{self, MasterAppkey};
 use frostsnap_core::bitcoin_transaction::{ScopedTo, TransactionTemplate};
 use frostsnap_core::message::EncodedSignature;
@@ -183,6 +184,8 @@ pub struct Transaction {
     pub inner: RTransaction,
     pub txid: String,
     pub confirmation_time: Option<ConfirmationTime>,
+    /// Confirmations computed by the wallet model for this transaction snapshot.
+    pub confirmations: u32,
     pub last_seen: Option<u64>,
     pub prevouts: HashMap<bitcoin::OutPoint, bitcoin::TxOut>,
     pub is_mine: HashMap<bitcoin::ScriptBuf, u32>,
@@ -214,6 +217,7 @@ impl Transaction {
             inner: raw_tx,
             txid: txid.to_string(),
             confirmation_time: None,
+            confirmations: 0,
             last_seen: None,
             prevouts,
             is_mine,
@@ -432,8 +436,8 @@ pub struct _ConfirmationTime {
     pub time: u64,
 }
 
-impl From<Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>> for TxState {
-    fn from(txs: Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>) -> Self {
+impl From<Vec<WalletTransaction>> for TxState {
+    fn from(txs: Vec<WalletTransaction>) -> Self {
         let txs = txs
             .into_iter()
             .map(From::from)
@@ -476,8 +480,8 @@ impl From<Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>> for TxState 
     }
 }
 
-impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
-    fn from(value: frostsnap_coordinator::bitcoin::wallet::Transaction) -> Self {
+impl From<WalletTransaction> for Transaction {
+    fn from(value: WalletTransaction) -> Self {
         let inner: RTransaction = (value.inner).deref().clone();
         // In the canonical graph means broadcast or seen on chain, so `inner` carries real
         // witnesses and its own size is the signed size.
@@ -487,6 +491,7 @@ impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
             inner,
             txid: value.txid.to_string(),
             confirmation_time: value.confirmation_time,
+            confirmations: value.confirmations,
             last_seen: value.last_seen,
             prevouts: value.prevouts,
             is_mine: value.is_mine,
