@@ -16,6 +16,13 @@ const double iconSize = 20.0;
 /// M3 standard dialog constraints
 const dialogConstraints = BoxConstraints(minWidth: 280, maxWidth: 560);
 
+/// Converts bridge exceptions into text suitable for showing to a user.
+///
+/// Flutter Rust Bridge's [AnyhowException.toString] includes the Dart wrapper
+/// name. The underlying Rust error message is the useful part.
+String displayExceptionMessage(Object exception) =>
+    exception is AnyhowException ? exception.message : exception.toString();
+
 RoundedRectangleBorder cardShape(BuildContext context) =>
     RoundedRectangleBorder(
       borderRadius: BorderRadius.all(Radius.circular(28)),
@@ -240,13 +247,7 @@ Future<void> showExceptionDialog(
       final colorScheme = theme.colorScheme;
       final scrollController = ScrollController();
 
-      // Extract error message based on exception type
-      final String errorMessage;
-      if (exception is AnyhowException) {
-        errorMessage = exception.message;
-      } else {
-        errorMessage = exception.toString();
-      }
+      final errorMessage = displayExceptionMessage(exception);
 
       return AlertDialog(
         constraints: const BoxConstraints(maxWidth: 560),

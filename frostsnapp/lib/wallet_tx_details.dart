@@ -357,6 +357,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   late final StreamSubscription<TxState> txStateSub;
   StreamSubscription<DeviceListUpdate>? devicesSub;
   StreamSubscription<SigningState>? signingSub;
+  bool signingErrorHandled = false;
   SigningState? signingState;
   bool? broadcastDone;
   Set<DeviceId> connectedDevices = deviceIdSet([]);
@@ -488,6 +489,21 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     Navigator.pop(context);
   }
 
+  // Reached from the synchronous catch and from the stream's onError; whichever
+  // comes first wins so the same failure isn't shown twice.
+  void _onSigningError(Object error) {
+    if (signingErrorHandled) return;
+    signingErrorHandled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showErrorSnackbar(
+        context,
+        'Signing failed: ${displayExceptionMessage(error)}',
+      );
+      Navigator.popUntil(context, (r) => r.isFirst);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -519,11 +535,19 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           devicesSub = GlobalStreams.deviceListSubject.listen(onDeviceListData);
           broadcastDone = false;
           late final StreamSubscription<SigningState> sub;
-          sub = signingParams.startSigning().listen((state) {
-            // Ensure `onSigningSessionData` is called sequentially.
-            sub.pause();
-            onSigningSessionData(state).whenComplete(sub.resume);
-          });
+          sub = signingParams.startSigning().listen(
+            (state) {
+              // Ensure `onSigningSessionData` is called sequentially.
+              sub.pause();
+              onSigningSessionData(state).whenComplete(sub.resume);
+            },
+            // A session that failed to start arrives here rather than at the
+            // call: frb drops the `Result` of a stream-returning call, so rust
+            // puts the failure onto the stream instead. Without this the error
+            // is an unhandled zone error and the screen sits on a session that
+            // never began.
+            onError: _onSigningError,
+          );
           signingSub = sub;
         case SigningFinished():
           // Signing is over; there is no stream to follow, only a transaction to send.
@@ -532,10 +556,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           break;
       }
     } catch (e) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        showErrorSnackbar(context, e.toString());
-        Navigator.popUntil(context, (r) => r.isFirst);
-      });
+      _onSigningError(e);
     }
   }
 
