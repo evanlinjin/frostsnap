@@ -11,14 +11,16 @@ pub(super) enum ConnPhase {
     Idle,
     Connecting { on_backup: bool },
     Connected { on_backup: bool },
-    Disconnected,
+    Disconnected { on_backup: bool },
 }
 
 impl ConnPhase {
     fn on_backup(self) -> bool {
         matches!(
             self,
-            ConnPhase::Connecting { on_backup: true } | ConnPhase::Connected { on_backup: true }
+            ConnPhase::Connecting { on_backup: true }
+                | ConnPhase::Connected { on_backup: true }
+                | ConnPhase::Disconnected { on_backup: true }
         )
     }
 
@@ -27,7 +29,7 @@ impl ConnPhase {
             ConnPhase::Idle => ChainStatusState::Idle,
             ConnPhase::Connecting { .. } => ChainStatusState::Connecting,
             ConnPhase::Connected { .. } => ChainStatusState::Connected,
-            ConnPhase::Disconnected => ChainStatusState::Disconnected,
+            ConnPhase::Disconnected { .. } => ChainStatusState::Disconnected,
         }
     }
 }
@@ -87,6 +89,13 @@ impl StatusTracker {
         self.emit();
     }
 
+    /// Move the current server into Disconnected without forgetting whether it was the backup.
+    pub(super) fn set_disconnected(&mut self) {
+        self.set_phase(ConnPhase::Disconnected {
+            on_backup: self.phase.on_backup(),
+        });
+    }
+
     /// Re-project and emit after a config-url change (phase unchanged); deduped, so a config
     /// change that doesn't alter the displayed status is silent.
     pub fn refresh(&mut self) {
@@ -129,7 +138,7 @@ mod tests {
 
         t.set_phase(ConnPhase::Connecting { on_backup: true });
         t.set_phase(ConnPhase::Connected { on_backup: false });
-        t.set_phase(ConnPhase::Disconnected);
+        t.set_phase(ConnPhase::Disconnected { on_backup: true });
         t.set_phase(ConnPhase::Idle);
 
         let log = log.lock().unwrap();
@@ -140,12 +149,26 @@ mod tests {
                 (ChainStatusState::Idle, false), // initial, from set_sink
                 (ChainStatusState::Connecting, true),
                 (ChainStatusState::Connected, false),
-                (ChainStatusState::Disconnected, false),
+                (ChainStatusState::Disconnected, true),
                 (ChainStatusState::Idle, false),
             ]
         );
         assert_eq!(log[1].primary_url, "tcp://p:1");
         assert_eq!(log[1].backup_url, "tcp://b:1");
+    }
+
+    #[test]
+    fn disconnect_keeps_the_current_server_identity() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let (mut t, _tx) = tracker(log.clone());
+
+        for on_backup in [false, true] {
+            t.set_phase(ConnPhase::Connected { on_backup });
+            t.set_disconnected();
+            let status = log.lock().unwrap().last().unwrap().clone();
+            assert_eq!(status.state, ChainStatusState::Disconnected);
+            assert_eq!(status.on_backup, on_backup);
+        }
     }
 
     /// Identical successive statuses are not re-emitted; a config-url change re-emits.

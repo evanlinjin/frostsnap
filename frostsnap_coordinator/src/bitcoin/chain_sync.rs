@@ -658,12 +658,11 @@ impl ConnLoop {
         // stale Connected while the socket closes. We don't infer it from `next`: a disable
         // arrives as a config change that maps to Next::Connect, the same as a same-server
         // reconnect, so `next` can't tell them apart.
-        let leaving = if handler.should_connect() {
-            ConnPhase::Disconnected
+        if handler.should_connect() {
+            handler.status.set_disconnected();
         } else {
-            ConnPhase::Idle
-        };
-        handler.status.set_phase(leaving);
+            handler.status.set_phase(ConnPhase::Idle);
+        }
         let shutdown_result = match conn {
             Conn::Tcp((rh, wh)) => rh.unsplit(wh).shutdown().await,
             Conn::Ssl((rh, wh)) => rh.unsplit(wh).shutdown().await,
@@ -678,7 +677,7 @@ impl ConnLoop {
         // Between attempts we are disconnected (will retry). The service teardown already
         // asserted this on the failover path; on the connect-failure path the phase is still
         // Connecting, so assert it here. Deduped, so the redundant case is silent.
-        self.handler.status.set_phase(ConnPhase::Disconnected);
+        self.handler.status.set_disconnected();
         if failover {
             self.handler.prefer_other_server(was_on_backup);
         }
