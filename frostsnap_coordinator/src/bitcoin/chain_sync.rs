@@ -819,6 +819,126 @@ mod test {
         ElectrumScriptHash::new(&spk)
     }
 
+    /// A transaction dropped from the mempool while we were disconnected must still be noticed
+    /// as evicted on the next startup.
+    ///
+    /// The chain source spots an eviction by missing a txid from the history the server now
+    /// reports, so it can only spot txids it already holds for that script — and that set
+    /// (`Cache::tx_cache::spk_txids`) is deliberately not persisted. If startup does not rebuild
+    /// it from the wallet, the eviction is invisible for as long as the script's history does not
+    /// change again, and the wallet goes on showing a transaction the network has forgotten.
+    #[test]
+    fn an_eviction_that_happened_while_disconnected_is_detected_after_a_restart() {
+        use bdk_chain::bitcoin::{Amount, TxIn, TxOut};
+        use bdk_chain::BlockId;
+        use bdk_electrum_streaming::{JobId, ReqCoord, ReqQueue, SpkJob, SpkProgress};
+
+        const NETWORK: bitcoin::Network = bitcoin::Network::Bitcoin;
+        const INDEX: u32 = 3;
+
+        let db = Arc::new(sync::Mutex::new(
+            rusqlite::Connection::open_in_memory().unwrap(),
+        ));
+        let master_appkey =
+            MasterAppkey::derive_from_rootkey(Point::random(&mut rand::thread_rng()));
+        let keychain = (master_appkey, BitcoinAccountKeychain::external());
+        let spk = crate::bitcoin::peek_spk(
+            master_appkey,
+            BitcoinBip32Path {
+                account_keychain: BitcoinAccountKeychain::external(),
+                index: NormalIndex::new(INDEX).unwrap(),
+            },
+        );
+
+        fn chain_client(
+            db: &Arc<sync::Mutex<rusqlite::Connection>>,
+        ) -> (ChainClient, ConnectionHandler) {
+            let trusted = {
+                let mut conn = db.lock().unwrap();
+                Persisted::new(&mut *conn, NETWORK).unwrap()
+            };
+            ChainClient::new(
+                NETWORK,
+                ElectrumConfig {
+                    enabled: ElectrumEnabled::None,
+                    primary: String::new(),
+                    backup: String::new(),
+                },
+                trusted,
+                db.clone(),
+            )
+        }
+
+        // A session that saw the transaction in the mempool and stored it.
+        let txid = {
+            let (client, _handler) = chain_client(&db);
+            let mut wallet = CoordSuperWallet::load_or_init(db.clone(), NETWORK, client).unwrap();
+            wallet.list_addresses(master_appkey);
+
+            let tx = bitcoin::Transaction {
+                version: bitcoin::transaction::Version::TWO,
+                lock_time: bitcoin::absolute::LockTime::ZERO,
+                input: vec![TxIn::default()],
+                output: vec![TxOut {
+                    value: Amount::from_sat(1_000_000),
+                    script_pubkey: spk.clone(),
+                }],
+            };
+            let txid = tx.compute_txid();
+            let mut tx_update = bdk_chain::TxUpdate::default();
+            tx_update.txs = vec![Arc::new(tx)];
+
+            wallet
+                .apply_update(Update {
+                    tx_update,
+                    last_active_indices: [(keychain, INDEX)].into(),
+                    chain_update: Some(
+                        CheckPoint::from_block_ids([BlockId {
+                            height: 0,
+                            hash: bitcoin::constants::genesis_block(NETWORK).block_hash(),
+                        }])
+                        .unwrap(),
+                    ),
+                })
+                .unwrap();
+            assert!(wallet.get_tx(txid).is_some(), "the wallet stored the tx");
+            txid
+        };
+
+        // Restart: same database, fresh wallet, and a cache with nothing carried over in memory.
+        let (client, _handler) = chain_client(&db);
+        let mut wallet = CoordSuperWallet::load_or_init(db.clone(), NETWORK, client).unwrap();
+        wallet.list_addresses(master_appkey);
+        assert!(
+            wallet.get_tx(txid).is_some(),
+            "the tx is still on disk after the restart"
+        );
+
+        let mut cache = Cache::default();
+        seed_tx_cache_from_wallet(&mut cache, &wallet);
+
+        // The server now reports no history at all for the script: while we were away, the
+        // transaction was dropped and nothing replaced it.
+        let spk_hash = ElectrumScriptHash::new(&spk);
+        let mut job = SpkJob::new(&cache, spk_hash, None);
+        let mut queue = ReqQueue::default();
+        let mut coord = ReqCoord::new(0);
+        let mut queuer = coord.queuer(&mut queue, JobId::Spk(spk_hash));
+        let progress = job.poll(&mut queuer, &cache).unwrap();
+
+        let SpkProgress::Done(tx_update) = progress else {
+            panic!("a script the server has no history for leaves nothing to fetch: {progress:?}");
+        };
+        assert!(
+            tx_update
+                .evicted_ats
+                .iter()
+                .any(|&(evicted, _)| evicted == txid),
+            "the dropped tx must be reported as evicted, got {:?}",
+            tx_update.evicted_ats,
+        );
+    }
+
     /// Pins the upstream contract `monitor_keychain` rides on (bdk_electrum_streaming >= 0.5.3):
     /// re-inserting the SAME descriptor with a larger `next_index` widens the tracked window in
     /// place, and equal or smaller never narrows it. Before 0.5.3 an unchanged descriptor was an
