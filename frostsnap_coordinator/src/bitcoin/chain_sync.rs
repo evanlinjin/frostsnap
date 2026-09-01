@@ -35,12 +35,13 @@ use tokio::sync::watch;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{event, Level};
 
-use crate::persist::Persisted;
+use crate::persist::{Persist, Persisted};
 use crate::settings::ElectrumEnabled;
 use crate::Sink;
 
 use super::{
     descriptor_for_account_keychain,
+    electrum_cache::ElectrumCache,
     handler_state::{ConnectedTo, Establish, HandlerState},
     status_tracker::ConnPhase,
     tofu::{
@@ -154,7 +155,7 @@ pub struct ChainClient {
 
 impl ChainClient {
     pub fn new(
-        genesis_hash: BlockHash,
+        network: bitcoin::Network,
         config: ElectrumConfig,
         trusted_certificates: Persisted<TrustedCertificates>,
         db: Arc<sync::Mutex<rusqlite::Connection>>,
@@ -162,7 +163,12 @@ impl ChainClient {
         let (req_sender, req_recv) = mpsc::unbounded();
         let (client, client_recv) = KeychainClient::new();
         let (config_tx, config_rx) = watch::channel(config);
-        let cache = Cache::default();
+        let genesis_hash = bitcoin::constants::genesis_block(network).block_hash();
+        let electrum_cache = {
+            let mut db_ = db.lock().unwrap();
+            Persisted::<ElectrumCache>::new(&mut db_, network)
+                .expect("must load persisted electrum cache")
+        };
         (
             Self {
                 req_sender,
@@ -173,7 +179,8 @@ impl ChainClient {
             ConnectionHandler {
                 req_recv,
                 client_recv,
-                cache,
+                cache: electrum_cache.cache.clone(),
+                network,
                 client,
                 genesis_hash,
                 trusted_certificates,
@@ -343,6 +350,7 @@ pub struct ConnectionHandler {
     client_recv: KeychainClientReceiver,
     req_recv: mpsc::UnboundedReceiver<Message>,
     cache: Cache,
+    network: bitcoin::Network,
     genesis_hash: BlockHash,
     trusted_certificates: Persisted<TrustedCertificates>,
     db: Arc<sync::Mutex<rusqlite::Connection>>,
@@ -374,8 +382,11 @@ impl ConnectionHandler {
             let super_wallet = super_wallet.lock().expect("must lock");
             network = super_wallet.network;
             chain_tip = super_wallet.chain_tip();
-            self.cache.txs.extend(super_wallet.tx_cache());
-            self.cache.anchors.extend(super_wallet.anchor_cache());
+            self.cache.tx_cache.txs.extend(super_wallet.tx_cache());
+            self.cache
+                .tx_cache
+                .anchors
+                .extend(super_wallet.anchor_cache());
         }
 
         tracing::info!("Running ConnectionHandler for {} network", network);
@@ -396,7 +407,7 @@ impl ConnectionHandler {
             self.genesis_hash,
             self.config_rx.clone(),
             self.trusted_certificates,
-            self.db,
+            self.db.clone(),
         );
 
         let electrum_state = AsyncState::<KeychainId>::new(
@@ -414,6 +425,8 @@ impl ConnectionHandler {
             update_sender,
             electrum_state,
             config_rx: self.config_rx,
+            network: self.network,
+            db: self.db,
         };
 
         rt.block_on(conn_loop.drive());
@@ -479,11 +492,35 @@ struct ConnLoop {
     update_sender: mpsc::UnboundedSender<Update<KeychainId>>,
     electrum_state: AsyncState<KeychainId>,
     config_rx: watch::Receiver<ElectrumConfig>,
+    network: bitcoin::Network,
+    db: Arc<sync::Mutex<rusqlite::Connection>>,
 }
 
 impl ConnLoop {
     const PING_DELAY: Duration = Duration::from_secs(21);
     const PING_TIMEOUT: Duration = Duration::from_secs(3);
+
+    /// Snapshot `subscriptions`/`headers` to the db (`tx_cache` is never written — see
+    /// `electrum_cache` module docs). Called whenever a connection ends, which is the natural
+    /// checkpoint: best-effort, so a failure just means a slower resync next launch, not
+    /// something to bubble up.
+    ///
+    /// Takes its inputs explicitly (not `&self`) so it can be called with `self.network` and
+    /// `self.electrum_state` still live inside `service`'s field-destructured borrows.
+    fn persist_cache(
+        network: bitcoin::Network,
+        db: &sync::Mutex<rusqlite::Connection>,
+        cache: &Cache,
+    ) {
+        let electrum_cache = ElectrumCache::new(network, cache.clone());
+        let result = db
+            .lock()
+            .map_err(|_| anyhow!("db mutex poisoned"))
+            .and_then(|mut conn| electrum_cache.persist_update(&mut conn, ()));
+        if let Err(err) = result {
+            tracing::warn!(error = err.to_string(), "Failed to persist electrum cache");
+        }
+    }
 
     async fn drive(&mut self) {
         let mut next = Next::Idle;
@@ -563,6 +600,7 @@ impl ConnLoop {
             update_sender,
             electrum_state,
             config_rx,
+            ..
         } = self;
 
         let next = {
@@ -647,6 +685,10 @@ impl ConnLoop {
                 }
             }
         };
+
+        // Every path out of a connection is a natural checkpoint, Stop (app going away)
+        // included, so persist before anything else here.
+        Self::persist_cache(self.network, &self.db, electrum_state.cache());
 
         // The control channel closed: stop without touching status (the app is going away).
         if matches!(next, Next::Stop) {
