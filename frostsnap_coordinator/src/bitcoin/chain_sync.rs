@@ -7,8 +7,8 @@ use bdk_chain::{
     CheckPoint, ConfirmationBlockTime,
 };
 use bdk_electrum_streaming::{
-    electrum_streaming_client::request, run_async, AsyncReceiver, AsyncState, Cache,
-    DerivedSpkTracker, ReqCoord, Update,
+    electrum_streaming_client::{request, ElectrumScriptHash},
+    run_async, AsyncReceiver, AsyncState, Cache, DerivedSpkTracker, ReqCoord, Update,
 };
 use frostsnap_core::MasterAppkey;
 use futures::{
@@ -345,6 +345,26 @@ pub const fn default_backup_electrum_server(network: bitcoin::Network) -> &'stat
     }
 }
 
+/// Rebuild the half of the cache that is derived from the wallet rather than persisted.
+///
+/// [`Cache::tx_cache`] is deliberately not persisted — every part of it is already in the
+/// wallet, and a second copy would only give the two something to disagree about. That makes
+/// this the only thing standing between a restart and a silently missed eviction: the chain
+/// source reports one by missing a txid from the history the server now gives, so a txid it
+/// was never told about cannot go missing.
+fn seed_tx_cache_from_wallet(cache: &mut Cache, super_wallet: &CoordSuperWallet) {
+    cache.tx_cache.txs.extend(super_wallet.tx_cache());
+    cache.tx_cache.anchors.extend(super_wallet.anchor_cache());
+    for (spk, txid) in super_wallet.spk_txid_cache() {
+        cache
+            .tx_cache
+            .spk_txids
+            .entry(ElectrumScriptHash::new(&spk))
+            .or_default()
+            .insert(txid);
+    }
+}
+
 pub struct ConnectionHandler {
     client: KeychainClient,
     client_recv: KeychainClientReceiver,
@@ -382,11 +402,7 @@ impl ConnectionHandler {
             let super_wallet = super_wallet.lock().expect("must lock");
             network = super_wallet.network;
             chain_tip = super_wallet.chain_tip();
-            self.cache.tx_cache.txs.extend(super_wallet.tx_cache());
-            self.cache
-                .tx_cache
-                .anchors
-                .extend(super_wallet.anchor_cache());
+            seed_tx_cache_from_wallet(&mut self.cache, &super_wallet);
         }
 
         tracing::info!("Running ConnectionHandler for {} network", network);
